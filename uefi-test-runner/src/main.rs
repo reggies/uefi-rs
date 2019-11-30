@@ -3,6 +3,8 @@
 #![feature(asm)]
 #![feature(abi_efiapi)]
 
+#![feature(naked_functions)]
+
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -19,8 +21,23 @@ use uefi::table::boot::MemoryDescriptor;
 mod boot;
 mod proto;
 
+#[inline(never)]
+#[naked]
+extern "C" fn cpu_dead_loop() {
+    unsafe {
+        asm!("
+              1: xor %rax, %rax
+                 test %rax, %rax
+                 jz 1b
+             " :::: "volatile");
+    }
+}
+
 #[entry]
 fn efi_main(image: Handle, st: SystemTable<Boot>) -> Status {
+
+    cpu_dead_loop();
+
     // Initialize utilities (logging, memory allocation...)
     uefi_services::init(&st).expect_success("Failed to initialize utilities");
 
