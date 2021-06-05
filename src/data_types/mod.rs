@@ -13,6 +13,10 @@ impl Handle {
     pub(crate) unsafe fn uninitialized() -> Self {
         MaybeUninit::zeroed().assume_init()
     }
+
+    pub(crate) fn null() -> Self {
+        Handle(core::ptr::null_mut())
+    }
 }
 
 /// Handle to an event structure

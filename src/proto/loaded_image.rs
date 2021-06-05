@@ -8,6 +8,8 @@ use crate::{
 };
 use core::{ffi::c_void, str};
 
+type UnloadFn = extern "efiapi" fn(image_handle: Handle) -> Status;
+
 /// The LoadedImage protocol. This can be opened on any image handle using the `HandleProtocol` boot service.
 #[repr(C)]
 #[unsafe_guid("5b1b31a1-9562-11d2-8e3f-00a0c969723b")]
@@ -33,7 +35,7 @@ pub struct LoadedImage {
     image_data_type: MemoryType,
     /// This is a callback that a loaded image can use to do cleanup. It is called by the
     /// `UnloadImage` boot service.
-    unload: extern "efiapi" fn(image_handle: Handle) -> Status,
+    unload: Option<UnloadFn>,
 }
 
 /// Errors that can be raised during parsing of the load options.
@@ -49,6 +51,12 @@ impl LoadedImage {
     /// Returns a handle to the storage device on which the image is located.
     pub fn device(&self) -> Handle {
         self.device_handle
+    }
+
+    pub fn set_unload_routine(&mut self, routine: Option<UnloadFn>) -> Option<UnloadFn> {
+        let old = self.unload;
+        self.unload = routine;
+        old
     }
 
     /// Get the load options of the given image. If the image was executed from the EFI shell, or from a boot

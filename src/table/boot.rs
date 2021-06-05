@@ -56,14 +56,17 @@ pub struct BootServices {
         events: *mut Event,
         out_index: *mut usize,
     ) -> Status,
-    signal_event: usize,
-    close_event: usize,
-    check_event: usize,
+    signal_event: extern "efiapi" fn(event: Event) -> Status,
+    close_event: extern "efiapi" fn(event: Event) -> Status,
+    check_event: extern "efiapi" fn(event: Event) -> Status,
 
     // Protocol handlers
-    install_protocol_interface: usize,
-    reinstall_protocol_interface: usize,
-    uninstall_protocol_interface: usize,
+    install_protocol_interface:
+        extern "efiapi" fn(handle: &mut Handle, proto: &Guid, interface_type: i32, interface: *const c_void) -> Status,
+    reinstall_protocol_interface:
+        extern "efiapi" fn(handle: Handle, proto: &Guid, old_interface: *const c_void, new_interface: *const c_void) -> Status,
+    uninstall_protocol_interface:
+        extern "efiapi" fn(handle: Handle, proto: &Guid, interface: *const c_void) -> Status,
     handle_protocol:
         extern "efiapi" fn(handle: Handle, proto: &Guid, out_proto: &mut *mut c_void) -> Status,
     _reserved: usize,
@@ -101,12 +104,16 @@ pub struct BootServices {
     ) -> Status,
 
     // Driver support services
-    connect_controller: usize,
-    disconnect_controller: usize,
+    connect_controller:
+        unsafe extern "efiapi" fn(controller: Handle, driver_handle: *const Handle, remaining_path: Option<*mut DevicePath>, recursive: bool) -> Status,
+    disconnect_controller:
+        extern "efiapi" fn(controller: Handle, driver_handle: Handle, child_handle: Handle) -> Status,
 
     // Protocol open / close services
-    open_protocol: usize,
-    close_protocol: usize,
+    open_protocol:
+        extern "efiapi" fn(handle: Handle, proto: &Guid, out: &mut *mut c_void, agent: Handle, controller: Handle, attributes: OpenAttribute) -> Status,
+    close_protocol:
+        extern "efiapi" fn(handle: Handle, proto: &Guid, agent: Handle, controller: Handle) -> Status,
     open_protocol_information: usize,
 
     // Library services
@@ -170,6 +177,50 @@ impl BootServices {
             AllocateType::Address(addr) => (2, addr as u64),
         };
         (self.allocate_pages)(ty, mem_ty, count, &mut addr).into_with_val(|| addr)
+    }
+
+    /// Connects all drivers to the specified controller.
+    pub fn connect_all(&self, controller: Handle, remaining_path: Option<&mut DevicePath>, recursive: bool) -> Result {
+        let device_path = remaining_path.map(|p| p as *mut DevicePath);
+        let driver_handle_list = core::ptr::null();
+        unsafe {
+            (self.connect_controller)(controller, driver_handle_list, device_path, recursive)
+                .into()
+        }
+    }
+
+    /// Disconnect specified handle from controller.
+    ///
+    /// If driver_handle is specified then firmware will
+    /// only try to disconnect handle from that driver
+    /// handle. Otherwise, all drivers will be disconnected
+    /// from the specified handle.
+    ///
+    /// If child_handle is specified then only specified
+    /// handle will be destoyed. Otherwise all controller's
+    /// child handles will be destroyed.
+    pub fn disconnect(&self, controller: Handle, driver_handle: Option<Handle>, child_handle: Option<Handle>) -> Result {
+        let driver_handle = driver_handle.unwrap_or(Handle::null());
+        let child_handle = child_handle.unwrap_or(Handle::null());
+        (self.disconnect_controller)(controller, driver_handle, child_handle)
+            .into()
+    }
+
+    /// Create a guarded protocol interface.
+    pub fn open_protocol<'boot, P: Protocol>(&self, handle: Handle, agent: Handle, controller: Handle, attributes: OpenAttribute) -> Result<OpenProtocol<P>> {
+        let mut ptr = ptr::null_mut();
+        (self.open_protocol)(handle, &P::GUID, &mut ptr, agent, controller, attributes).into_with_val(|| {
+            let ptr = ptr as *mut P as *mut UnsafeCell<P>;
+            let ptr = unsafe { &*ptr };
+            OpenProtocol {
+                boot_services: self,
+                handle,
+                agent,
+                controller,
+                proto: ptr,
+                dont_close: false
+            }
+        })
     }
 
     /// Frees memory pages allocated by UEFI.
@@ -267,6 +318,40 @@ impl BootServices {
         (self.free_pool)(addr).into()
     }
 
+    #[cfg(feature = "exts")]
+    pub unsafe fn create_event_closure<F: FnMut(Event)>(
+        &self,
+        event_ty: EventType,
+        notify_tpl: Tpl,
+        notify_fn: Option<alloc_api::boxed::Box<F>>,
+    ) -> Result<Event> {
+        // Prepare storage for the output Event
+        let mut event = MaybeUninit::<Event>::uninit();
+        // Use a trampoline to handle the impedance mismatch between Rust & C
+        unsafe extern "efiapi" fn notify_trampoline<F: FnMut(Event)>(e: Event, ctx: *mut c_void) {
+            let mut notify_fn: alloc_api::boxed::Box<F> = alloc_api::boxed::Box::from_raw(mem::transmute(ctx));
+            notify_fn(e); // SAFETY: Aborting panics are assumed here
+            alloc_api::boxed::Box::leak(notify_fn);
+        }
+        let (notify_func, notify_ctx) = notify_fn
+            .map(|notify_fn| {
+                (
+                    Some(notify_trampoline::<F> as EventNotifyFn),
+                    alloc_api::boxed::Box::into_raw(notify_fn) as *mut c_void
+                )
+            })
+            .unwrap_or((None, ptr::null_mut()));
+        // Now we're ready to call UEFI
+        (self.create_event)(
+            event_ty,
+            notify_tpl,
+            notify_func,
+            notify_ctx,
+            event.as_mut_ptr(),
+        )
+            .into_with_val(|| event.assume_init())
+    }
+
     /// Creates an event
     ///
     /// This function creates a new event of the specified type and returns it.
@@ -316,6 +401,14 @@ impl BootServices {
         .into_with_val(|| event.assume_init())
     }
 
+    /// This is the safe variant of create_event()
+    pub fn create_timer_event(&self) -> Result<Event> {
+        // SAFETY: this is safe in terms of create_event()
+        unsafe {
+            self.create_event(EventType::TIMER, Tpl::NOTIFY, None)
+        }
+    }
+
     /// Stops execution until an event is signaled
     ///
     /// This function must be called at priority level `Tpl::APPLICATION`. If an
@@ -356,6 +449,18 @@ impl BootServices {
                 }
             },
         )
+    }
+
+    pub fn signal_event(&self, event: Event) -> Result {
+        (self.signal_event)(event).into()
+    }
+
+    pub fn close_event(&self, event: Event) -> Result {
+        (self.close_event)(event).into()
+    }
+
+    pub fn check_event(&self, event: Event) -> Result {
+        (self.check_event)(event).into()
     }
 
     /// Sets the trigger for `EventType::TIMER` event.
@@ -562,6 +667,20 @@ impl BootServices {
             .map(|completion| completion.with_status(status2))
     }
 
+    pub fn install_interface<'boot, P: Protocol + 'boot>(&'boot self, handle: Handle, proto: &'boot P) -> Result {
+        let mut in_out_handle = handle;
+        let proto = (proto as *const P).cast();
+        (self.install_protocol_interface)(&mut in_out_handle, &P::GUID, 0, proto)
+            .into()
+    }
+
+    pub fn uninstall_interface<'boot, P: Protocol + 'boot>(&'boot self, handle: Handle, proto: &'boot P) -> Result {
+        let proto = (proto as *const P).cast();
+        (self.uninstall_protocol_interface)(handle, &P::GUID, proto)
+            .into()
+    }
+
+
     /// Retrieves the `SimpleFileSystem` protocol associated with
     /// the device the given image was loaded from.
     ///
@@ -636,6 +755,54 @@ impl Drop for TplGuard<'_> {
     }
 }
 
+pub struct OpenProtocol<'boot, P: Protocol + 'boot> {
+    boot_services: &'boot BootServices,
+    handle: Handle,
+    agent: Handle,
+    controller: Handle,
+    proto: &'boot UnsafeCell<P>,
+    dont_close: bool
+}
+
+impl<'boot, P: Protocol + 'boot> OpenProtocol<'boot, P> {
+    pub fn as_proto(&self) -> &'boot UnsafeCell<P> {
+        self.proto
+    }
+
+    pub fn with_proto<R, F: FnOnce(&'boot P) -> R>(&self, f: F) -> R {
+        // SAFETY: TBD
+        let temp = unsafe { &*self.proto.get() };
+        f(temp)
+    }
+
+    pub fn close(&self) -> Result {
+        (self.boot_services.close_protocol)(self.handle, &P::GUID, self.agent, self.controller)
+            .into()
+    }
+
+    pub fn dont_close(&mut self) {
+        self.dont_close = true;
+    }
+}
+
+pub fn leak<'boot, P: Protocol + 'boot>(guard: OpenProtocol<'boot, P>) -> &'boot UnsafeCell<P> {
+    let cell = guard.proto;
+    mem::forget(guard);
+    cell
+}
+
+impl<'boot, P: Protocol + 'boot> Drop for OpenProtocol<'boot, P> {
+    fn drop(&mut self) {
+        if !self.dont_close {
+            // Error is ignored
+            self.close()
+                .map(|_| ())
+                .or::<()>(Ok(().into()))
+                .unwrap();
+        }
+    }
+}
+
 /// Type of allocation to perform.
 #[derive(Debug, Copy, Clone)]
 pub enum AllocateType {
@@ -645,6 +812,18 @@ pub enum AllocateType {
     MaxAddress(usize),
     /// Allocate pages at the specified address.
     Address(usize),
+}
+
+bitflags! {
+    /// See BootService::OpenProtocol for more information
+    pub struct OpenAttribute: u32 {
+        const BY_HANDLE     = 0x00000001;
+        const GET_PROTOCOL  = 0x00000002;
+        const TEST_PROTOCOL = 0x00000004;
+        const BY_CHILD      = 0x00000008;
+        const BY_DRIVER     = 0x00000010;
+        const EXCLUSIVE     = 0x00000020;
+    }
 }
 
 newtype_enum! {
