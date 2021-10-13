@@ -1,6 +1,7 @@
 use crate::proto::Protocol;
 use crate::{unsafe_guid, Status, Result};
 use core::ffi::c_void;
+use core::mem::MaybeUninit;
 
 #[repr(C)]
 struct IoSpace {
@@ -83,6 +84,12 @@ impl PciIO {
             .into()
     }
 
+    pub fn read_config_single<T: ToIoWidth>(&self, offset: u32) -> Result<T> {
+        let mut buffer: MaybeUninit<T> = MaybeUninit::uninit();
+        (self.config.read)(self, T::IO_WIDTH, offset, 1, buffer.as_mut_ptr().cast())
+            .into_with_val(|| unsafe { buffer.assume_init() })
+    }
+
     pub fn write_config<T: ToIoWidth>(&self, offset: u32, buffer: &[T]) -> Result {
         (self.config.write)(self, T::IO_WIDTH, offset, buffer.len(), buffer.as_ptr().cast())
             .into()
@@ -93,8 +100,30 @@ impl PciIO {
             .into()
     }
 
+    pub fn read_io_single<T: ToIoWidth>(&self, bar: IoRegister, offset: u64) -> Result<T> {
+        let mut buffer: MaybeUninit<T> = MaybeUninit::uninit();
+        (self.io.read)(self, T::IO_WIDTH, bar, offset, 1, buffer.as_mut_ptr().cast())
+            .into_with_val(|| unsafe { buffer.assume_init() })
+    }
+
     pub fn write_io<T: ToIoWidth>(&self, bar: IoRegister, offset: u64, buffer: &[T]) -> Result {
         (self.io.write)(self, T::IO_WIDTH, bar, offset, buffer.len(), buffer.as_ptr().cast())
+            .into()
+    }
+
+    pub fn read_mem<T: ToIoWidth>(&self, bar: IoRegister, offset: u64, buffer: &mut [T]) -> Result {
+        (self.mem.read)(self, T::IO_WIDTH, bar, offset, buffer.len(), buffer.as_mut_ptr().cast())
+            .into()
+    }
+
+    pub fn read_mem_single<T: ToIoWidth>(&self, bar: IoRegister, offset: u64) -> Result<T> {
+        let mut buffer: MaybeUninit<T> = MaybeUninit::uninit();
+        (self.mem.read)(self, T::IO_WIDTH, bar, offset, 1, buffer.as_mut_ptr().cast())
+            .into_with_val(|| unsafe { buffer.assume_init() })
+    }
+
+    pub fn write_mem<T: ToIoWidth>(&self, bar: IoRegister, offset: u64, buffer: &[T]) -> Result {
+        (self.mem.write)(self, T::IO_WIDTH, bar, offset, buffer.len(), buffer.as_ptr().cast())
             .into()
     }
 
@@ -133,6 +162,7 @@ newtype_enum! {
         R3 = 3,
         R4 = 4,
         R5 = 5,
+        PASS_THROUGH_BAR = 0xff,
     }
 }
 
