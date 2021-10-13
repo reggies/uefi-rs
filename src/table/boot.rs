@@ -223,6 +223,11 @@ impl BootServices {
         })
     }
 
+    pub fn close_protocol<P: Protocol>(&self, handle: Handle, agent: Handle, controller: Handle) -> Result {
+        (self.close_protocol)(handle, &P::GUID, agent, controller)
+            .into()
+    }
+
     /// Frees memory pages allocated by UEFI.
     pub fn free_pages(&self, addr: u64, count: usize) -> Result {
         (self.free_pages)(addr, count).into()
@@ -665,6 +670,13 @@ impl BootServices {
         status1
             .into_with_val(|| buffer)
             .map(|completion| completion.with_status(status2))
+    }
+
+    pub fn create_child<'boot, P: Protocol + 'boot>(&'boot self, proto: &'boot P) -> Result<Handle> {
+        let mut out_handle = Handle::null();
+        let proto = (proto as *const P).cast();
+        (self.install_protocol_interface)(&mut out_handle, &P::GUID, 0, proto)
+            .into_with_val(|| out_handle)
     }
 
     pub fn install_interface<'boot, P: Protocol + 'boot>(&'boot self, handle: Handle, proto: &'boot P) -> Result {
