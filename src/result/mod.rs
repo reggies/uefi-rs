@@ -52,6 +52,9 @@ pub trait ResultExt<Output, ErrData: Debug> {
     /// Transform the ErrData value to ()
     fn discard_errdata(self) -> Result<Output>;
 
+    /// Be smarter
+    fn ignore_warning(self) -> core::result::Result<Output, Error<ErrData>>;
+
     /// Treat warnings as errors
     fn warning_as_error(self) -> core::result::Result<Output, Error<ErrData>>
     where
@@ -90,6 +93,13 @@ impl<Output, ErrData: Debug> ResultExt<Output, ErrData> for Result<Output, ErrDa
         match self {
             Ok(o) => Ok(o),
             Err(e) => Err(e.status().into()),
+        }
+    }
+
+    fn ignore_warning(self) -> core::result::Result<Output, Error<ErrData>> {
+        match self.map(Completion::split) {
+            Ok((s, res)) => Ok(res),
+            Err(e) => Err(e),
         }
     }
 
