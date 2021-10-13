@@ -76,13 +76,16 @@ pub fn init(st: &SystemTable<Boot>) -> Result {
         uefi::alloc::init(boot_services);
 
         // Schedule these tools to be disabled on exit from UEFI boot services
-        boot_services
-            .create_event(
-                EventType::SIGNAL_EXIT_BOOT_SERVICES,
-                Tpl::NOTIFY,
-                Some(exit_boot_services),
-            )
-            .map_inner(|_| ())
+        // TBD: this event must be closed before the image gets unloaded
+        // boot_services
+        //     .create_event(
+        //         EventType::SIGNAL_EXIT_BOOT_SERVICES,
+        //         Tpl::NOTIFY,
+        //         Some(exit_boot_services),
+        //     )
+        //     .map_inner(|_| ())
+
+        uefi::Status::SUCCESS.into()
     }
 }
 
