@@ -1,7 +1,7 @@
 use crate::proto::Protocol;
 use crate::{unsafe_guid, Status, Result};
 use core::ffi::c_void;
-use core::mem::MaybeUninit;
+use core::mem::{MaybeUninit, size_of};
 
 #[repr(C)]
 struct IoSpace {
@@ -158,6 +158,13 @@ impl PciIO {
                     size: out_num_bytes
                 })
             })
+    }
+
+    /// Create bus relative memory address from an object.
+    pub fn map_ex<'a, T: Sized + 'a>(&'a self, op: IoOperation, storage: &'a mut T) -> Result<Mapping> {
+        let num_bytes = core::mem::size_of::<T>();
+        let host_addr = storage as *mut T as *mut c_void;
+        self.map(op, host_addr, num_bytes)
     }
 
     /// Remove device memory mapping for the previously mapped system address.
