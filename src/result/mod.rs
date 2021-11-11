@@ -98,7 +98,7 @@ impl<Output, ErrData: Debug> ResultExt<Output, ErrData> for Result<Output, ErrDa
 
     fn ignore_warning(self) -> core::result::Result<Output, Error<ErrData>> {
         match self.map(Completion::split) {
-            Ok((s, res)) => Ok(res),
+            Ok((_s, res)) => Ok(res),
             Err(e) => Err(e),
         }
     }
