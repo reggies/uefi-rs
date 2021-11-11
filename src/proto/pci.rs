@@ -146,6 +146,7 @@ impl PciIO {
         (self.map)(self, op, host_addr, &mut out_num_bytes, &mut out_device_addr, &mut out_mapping)
             .into_with_err(|_| {})
             .map(|completion| {
+                // TBD: -- check out_num_bytes that it matches the request
                 // TBD: -- maybe check for alignment/null at least?
                 completion.map(|_| Mapping {
                     addr: out_mapping,
