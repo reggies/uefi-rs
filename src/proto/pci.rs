@@ -77,11 +77,6 @@ impl Mapping {
     pub fn device_address(&self) -> u64 {
         self.device_addr
     }
-
-    /// System memory address of the captured object.
-    pub fn as_ptr(&self) -> *const c_void {
-        self.addr
-    }
 }
 
 impl PciIO {
