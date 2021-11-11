@@ -1,7 +1,7 @@
 use crate::proto::Protocol;
 use crate::{unsafe_guid, Status, Result};
 use core::ffi::c_void;
-use core::mem::{MaybeUninit, size_of};
+use core::mem::MaybeUninit;
 
 #[repr(C)]
 struct IoSpace {
@@ -180,8 +180,8 @@ impl PciIO {
     }
 }
 
-/// An index of the PCI Base Address Register.
 newtype_enum! {
+    /// An index of the PCI Base Address Register.
     pub enum IoRegister: u8 => {
         R0 = 0,
         R1 = 1,
