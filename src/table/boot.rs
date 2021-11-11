@@ -1075,3 +1075,70 @@ pub enum TimerTrigger {
     /// Delay of 0 will be signalled on next timer tick.
     Relative(u64),
 }
+
+macro_rules! impl_install_multiple_protocol_interfaces {
+    ($($Func:ident { $($P:ident . $gname:ident . $pname:ident),* } )*) => ($(
+        impl BootServices {
+            pub fn $Func<'boot, $($P),*>(
+                &'boot self,
+                handle: Option<Handle>,
+                $($pname: &'boot $P), *
+            ) -> Result<Handle>
+            where $($P: Protocol + 'boot), *
+            {
+                let mut in_out_handle = handle.unwrap_or(Handle::null());
+                type TargetFn = extern "efiapi" fn(
+                    handle: &mut Handle,
+                    $($gname: &Guid, $pname: *const c_void, )*
+                    null: *const c_void) -> Status;
+                let func = unsafe { mem::transmute::<_, TargetFn>(self.install_multiple_protocol_interfaces) };
+                (func)(
+                    &mut in_out_handle,
+                    $(&$P::GUID, ($pname as *const $P).cast(), )*
+                    core::ptr::null()
+                ).into_with_val(|| in_out_handle)
+            }
+        }
+    )*)
+}
+
+impl_install_multiple_protocol_interfaces!(install_multiple_protocol_interfaces0 { });
+impl_install_multiple_protocol_interfaces!(install_multiple_protocol_interfaces1 { P1 . guid1 . proto1 });
+impl_install_multiple_protocol_interfaces!(install_multiple_protocol_interfaces2 { P1 . guid1 . proto1, P2 . guid2 . proto2 });
+impl_install_multiple_protocol_interfaces!(install_multiple_protocol_interfaces3 { P1 . guid1 . proto1, P2 . guid2 . proto2, P3 . guid3 . proto3 });
+impl_install_multiple_protocol_interfaces!(install_multiple_protocol_interfaces4 { P1 . guid1 . proto1, P2 . guid2 . proto2, P3 . guid3 . proto3, P4 . guid4 .  proto4 });
+impl_install_multiple_protocol_interfaces!(install_multiple_protocol_interfaces5 { P1 . guid1 . proto1, P2 . guid2 . proto2, P3 . guid3 . proto3, P4 . guid4 .  proto4, P5 . guid5 . proto5 });
+impl_install_multiple_protocol_interfaces!(install_multiple_protocol_interfaces6 { P1 . guid1 . proto1, P2 . guid2 . proto2, P3 . guid3 . proto3, P4 . guid4 .  proto4, P5 . guid5 . proto5, P6 . guid6 . proto6 });
+
+macro_rules! impl_uninstall_multiple_protocol_interfaces {
+    ($($Func:ident { $($P:ident . $gname:ident . $pname:ident),* } )*) => ($(
+        impl BootServices {
+            pub fn $Func<'boot, $($P),*>(
+                &'boot self,
+                handle: Handle,
+                $($pname: &'boot $P), *
+            ) -> Result
+            where $($P: Protocol + 'boot), *
+            {
+                type TargetFn = extern "efiapi" fn(
+                    handle: Handle,
+                    $($gname: &Guid, $pname: *const c_void, )*
+                    null: *const c_void) -> Status;
+                let func = unsafe { mem::transmute::<_, TargetFn>(self.uninstall_multiple_protocol_interfaces) };
+                (func)(
+                    handle,
+                    $(&$P::GUID, ($pname as *const $P).cast(), )*
+                    core::ptr::null()
+                ).into()
+            }
+        }
+    )*)
+}
+
+impl_uninstall_multiple_protocol_interfaces!(uninstall_multiple_protocol_interfaces0 { });
+impl_uninstall_multiple_protocol_interfaces!(uninstall_multiple_protocol_interfaces1 { P1 . guid1 . proto1 });
+impl_uninstall_multiple_protocol_interfaces!(uninstall_multiple_protocol_interfaces2 { P1 . guid1 . proto1, P2 . guid2 . proto2 });
+impl_uninstall_multiple_protocol_interfaces!(uninstall_multiple_protocol_interfaces3 { P1 . guid1 . proto1, P2 . guid2 . proto2, P3 . guid3 . proto3 });
+impl_uninstall_multiple_protocol_interfaces!(uninstall_multiple_protocol_interfaces4 { P1 . guid1 . proto1, P2 . guid2 . proto2, P3 . guid3 . proto3, P4 . guid4 .  proto4 });
+impl_uninstall_multiple_protocol_interfaces!(uninstall_multiple_protocol_interfaces5 { P1 . guid1 . proto1, P2 . guid2 . proto2, P3 . guid3 . proto3, P4 . guid4 .  proto4, P5 . guid5 .  proto5 });
+impl_uninstall_multiple_protocol_interfaces!(uninstall_multiple_protocol_interfaces6 { P1 . guid1 . proto1, P2 . guid2 . proto2, P3 . guid3 . proto3, P4 . guid4 .  proto4, P5 . guid5 .  proto5, P6 . guid6 .  proto6 });
