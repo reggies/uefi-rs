@@ -67,6 +67,18 @@ pub enum DeviceSubType {
     EndEntire = 0xFF,
 }
 
+/// Sub-type for Hardware Device Path
+#[repr(u8)]
+#[derive(Debug)]
+pub enum HwDeviceSubType {
+    Pci = 0x01,
+    PCCard = 0x02,
+    MemoryMap = 0x03,
+    Vendor = 0x04,
+    Controller = 0x05,
+    BMC = 0x06,
+}
+
 /// ACPI Device Path
 #[repr(C)]
 pub struct AcpiDevicePath {
