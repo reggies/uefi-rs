@@ -84,6 +84,12 @@ impl From<Char16> for char {
     }
 }
 
+impl From<u8> for Char16 {
+    fn from(value: u8) -> Self {
+        Char16(u16::from(value))
+    }
+}
+
 impl TryFrom<u16> for Char16 {
     type Error = CharConversionError;
 
