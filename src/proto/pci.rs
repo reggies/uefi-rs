@@ -2,6 +2,7 @@ use crate::proto::Protocol;
 use crate::{unsafe_guid, Status, Result};
 use core::ffi::c_void;
 use core::mem::MaybeUninit;
+use core::ops::{Deref, DerefMut};
 
 #[repr(C)]
 struct IoSpace {
@@ -37,6 +38,9 @@ pub struct PciIO {
     rom_size_bytes: u64,
     rom_image: *const c_void,
 }
+
+/// Marker trait for mapped buffer.
+pub trait Mappable: Sized {}
 
 /// Indicate appropriate I/O access size during memory-mapped I/O operations.
 pub trait ToIoWidth {
@@ -157,9 +161,12 @@ impl PciIO {
     }
 
     /// Create bus relative memory address from an object.
-    pub fn map_ex<'a, T: Sized + 'a>(&'a self, op: IoOperation, storage: &'a mut T) -> Result<Mapping> {
-        let num_bytes = core::mem::size_of::<T>();
-        let host_addr = storage as *mut T as *mut c_void;
+    /// TBD: enforce the lifetime of the storage
+    pub fn map_ex<T>(&self, op: IoOperation, mut storage: T) -> Result<Mapping>
+    where T: DerefMut,
+          T::Target: Mappable {
+        let num_bytes = core::mem::size_of::<<T as Deref>::Target>();
+        let host_addr = storage.deref_mut() as *mut <T as Deref>::Target as *mut c_void;
         self.map(op, host_addr, num_bytes)
     }
 
