@@ -2,7 +2,9 @@ use crate::proto::Protocol;
 use crate::{unsafe_guid, Status, Result};
 use core::ffi::c_void;
 use core::mem::MaybeUninit;
-use core::ops::{Deref, DerefMut};
+
+#[cfg(feature = "exts")]
+use alloc_api::boxed::Box;
 
 #[repr(C)]
 struct IoSpace {
@@ -80,6 +82,46 @@ impl Mapping {
     /// Mapped bus relative address of the system memory object.
     pub fn device_address(&self) -> u64 {
         self.device_addr
+    }
+}
+
+pub struct MappingEx<'a, B> {
+    mapping: Option<Mapping>,
+    pci: &'a PciIO,
+    buffer: Box<B>
+}
+
+impl<'a, B> MappingEx<'a, B>
+where B: Mappable + 'a, {
+    /// Expose raw mapping object
+    pub fn mapping(&self) -> &Mapping {
+        self.mapping.as_ref().unwrap()
+    }
+
+    /// Mapped bus relative address of the system memory object.
+    pub fn device_address(&self) -> u64 {
+        self.mapping.as_ref().unwrap().device_address()
+    }
+
+    /// TBD:
+    pub fn get_mut(&mut self) -> *mut B {
+        &mut *self.buffer as *mut B
+    }
+
+    /// TBD
+    pub fn get(&self) -> *const B {
+        &*self.buffer as *const B
+    }
+}
+
+impl<'a, B> Drop for MappingEx<'a, B> {
+    fn drop(&mut self) {
+        if let Some(mapping) = self.mapping.take() {
+            self.pci
+                .unmap(mapping)
+                .expect("failed to unmap something");
+            // On error, mapping is moved back into this scope
+        }
     }
 }
 
@@ -173,14 +215,24 @@ impl PciIO {
             })
     }
 
+    #[cfg(feature = "exts")]
     /// Create bus relative memory address from an object.
-    /// TBD: enforce the lifetime of the storage
-    pub fn map_ex<T>(&self, op: IoOperation, mut storage: T) -> Result<Mapping>
-    where T: DerefMut,
-          T::Target: Mappable {
-        let num_bytes = core::mem::size_of::<<T as Deref>::Target>();
-        let host_addr = storage.deref_mut() as *mut <T as Deref>::Target as *mut c_void;
-        self.map(op, host_addr, num_bytes)
+    /// TBD: PCI_IO::AllocatePages for cache coherency
+    pub fn map_ex<'a, T>(&'a self, op: IoOperation) -> Result<MappingEx<'a, T>>
+    where T: Mappable + 'a, {
+        let num_bytes = core::mem::size_of::<T>();
+        let buffer = unsafe { Box::<T>::new_zeroed().assume_init() };
+        let host_addr = &*buffer as *const T as *const c_void;
+        unsafe {
+            self.map(op, host_addr, num_bytes)
+                .map(|completion| {
+                    MappingEx {
+                        mapping: Some(completion.ignore_warning()),
+                        pci: self,
+                        buffer
+                    }.into()
+                })
+        }
     }
 
     /// Remove device memory mapping for the previously mapped system address.

@@ -29,6 +29,11 @@ impl<T> Completion<T> {
         (self.status, self.result)
     }
 
+    /// Disregard warning and return stored result.
+    pub fn ignore_warning(self) -> T {
+        self.result
+    }
+
     /// Access the inner value, logging the warning if there is any
     pub fn log(self) -> T {
         if self.status != Status::SUCCESS {
