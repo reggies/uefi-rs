@@ -142,8 +142,21 @@ impl PciIO {
     }
 
     /// Create bus relative memory address for DMA operation.
-    /// TBD: mark it unsafe
-    pub fn map(&self, op: IoOperation, host_addr: *const c_void, num_bytes: usize) -> Result<Mapping> {
+    ///
+    /// This functions allows an external device to access
+    /// the buffer supplied for the duration of the DMA
+    /// operation or until unmap() function is called. It is
+    /// caller responsibility to ensure that the buffer
+    /// lives long enough and has proper size to accomodate
+    /// any access operation by the device.
+    ///
+    /// The caller must also make sure that buffer has
+    /// appropriate cache coherency properties and
+    /// synchronize any store operations on the buffer with
+    /// the device to avoid simultaneous mutation.
+    ///
+    /// The caller must also make sure to wash their hands.
+    pub unsafe fn map(&self, op: IoOperation, host_addr: *const c_void, num_bytes: usize) -> Result<Mapping> {
         let mut out_mapping = core::ptr::null();
         let mut out_num_bytes = num_bytes;
         let mut out_device_addr = 0;
