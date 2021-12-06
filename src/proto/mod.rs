@@ -36,3 +36,4 @@ pub mod shim;
 pub mod driver_binding;
 pub mod pci;
 pub mod component_name;
+pub mod acpi_table;
