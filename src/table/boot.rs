@@ -83,7 +83,10 @@ pub struct BootServices {
         device_path: &mut *mut DevicePath,
         out_handle: *mut Handle,
     ) -> Status,
-    install_configuration_table: usize,
+    install_configuration_table: extern "efiapi" fn(
+        guid: *const Guid,
+        buf: *mut c_void
+    ) -> Status,
 
     // Image services
     load_image: usize,
@@ -638,6 +641,13 @@ impl BootServices {
     /// invariants of the Rust type system.
     pub unsafe fn memset(&self, buffer: *mut u8, size: usize, value: u8) {
         (self.set_mem)(buffer, size, value);
+    }
+}
+
+impl BootServices {
+    pub unsafe fn install_configuration_table(&self, guid: &Guid, buffer: *mut c_void) -> Result {
+        (self.install_configuration_table)(guid as *const Guid, buffer)
+            .into()
     }
 }
 
